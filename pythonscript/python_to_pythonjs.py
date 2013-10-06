@@ -79,7 +79,6 @@ class PythonToPythonJS(NodeVisitor):
 
         self._module = module
         self._module_path = module_path
-        assert os.path.isdir( module_path )
 
     def save_module(self):
         if self._module and self._module_path:
