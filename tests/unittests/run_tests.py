@@ -1,7 +1,14 @@
 #!/usr/bin/env python
 import os
+import sys
+
 from subprocess import call
-from StringIO import StringIO
+try:
+    from StringIO import StringIO
+except:
+    from io import StringIO
+
+sys.path.insert(0, os.path.abspath('../../'))
 
 from pythonscript.pythonjs import main as pythonjs
 from pythonscript.pythonscript import main as pythonscript

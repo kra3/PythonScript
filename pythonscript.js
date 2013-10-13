@@ -411,7 +411,7 @@ window["set_attribute"] = set_attribute
 
 set_attribute.pythonscript_function = true;
 var get_arguments = function(signature, args, kwargs) {
-"Based on ``signature`` and ``args``, ``kwargs`` parameters retrieve\n    the actual parameters.\n\n    This will set default keyword arguments and retrieve positional arguments\n    in kwargs if their called as such";
+"Based on ``signature`` and ``args``, ``kwargs`` parameters retrieve\n    the actual parameters.";
 if(args === undefined) {
 args = [];
 }
@@ -428,16 +428,12 @@ else {
 argslength = 0;
 }
 
-if(args.length > signature.args.length) {
-console.log("ERROR args:", args, "kwargs:", kwargs, "sig:", signature);
-throw TypeError("function called with wrong number of arguments");
-}
-
 j = 0;
 while(j < argslength) {
 arg = signature.args[j];
 if(kwargs) {
 kwarg = kwargs[arg];
+delete kwargs[arg];
 if(kwarg) {
 out[arg] = kwarg;
 }
@@ -618,7 +614,7 @@ return r;
 window["range"] = range 
 
 range.pythonscript_function = true;
-var StopIteration, __StopIteration_attrs, __StopIteration_parents;
+var StopIteration;
 window["__StopIteration_attrs"] = Object();
 window["__StopIteration_parents"] = create_array();
 StopIteration = create_class("StopIteration", window["__StopIteration_parents"], window["__StopIteration_attrs"]);
@@ -763,7 +759,7 @@ return String.fromCharCode(num);
 window["chr"] = chr 
 
 chr.pythonscript_function = true;
-var Iterator, __Iterator_attrs, __Iterator_parents;
+var Iterator;
 window["__Iterator_attrs"] = Object();
 window["__Iterator_parents"] = create_array();
 var __Iterator___init__ = function(args, kwargs) {
@@ -807,7 +803,7 @@ window["__Iterator_next"] = __Iterator_next
 __Iterator_next.pythonscript_function = true;
 window["__Iterator_attrs"]["next"] = __Iterator_next;
 Iterator = create_class("Iterator", window["__Iterator_parents"], window["__Iterator_attrs"]);
-var tuple, __tuple_attrs, __tuple_parents;
+var tuple;
 window["__tuple_attrs"] = Object();
 window["__tuple_parents"] = create_array();
 var __tuple___init__ = function(args, kwargs) {
@@ -942,7 +938,7 @@ window["__tuple_get"] = __tuple_get
 __tuple_get.pythonscript_function = true;
 window["__tuple_attrs"]["get"] = __tuple_get;
 tuple = create_class("tuple", window["__tuple_parents"], window["__tuple_attrs"]);
-var list, __list_attrs, __list_parents;
+var list;
 window["__list_attrs"] = Object();
 window["__list_parents"] = create_array();
 var __list___init__ = function(args, kwargs) {
@@ -1238,7 +1234,7 @@ window["__list___len__"] = __list___len__
 __list___len__.pythonscript_function = true;
 window["__list_attrs"]["__len__"] = __list___len__;
 list = create_class("list", window["__list_parents"], window["__list_attrs"]);
-var dict, __dict_attrs, __dict_parents;
+var dict;
 window["__dict_attrs"] = Object();
 window["__dict_parents"] = create_array();
 __dict_UID = 0;
@@ -1479,7 +1475,7 @@ window["__dict_values"] = __dict_values
 __dict_values.pythonscript_function = true;
 window["__dict_attrs"]["values"] = __dict_values;
 dict = create_class("dict", window["__dict_parents"], window["__dict_attrs"]);
-var str, __str_attrs, __str_parents;
+var str;
 window["__str_attrs"] = Object();
 window["__str_parents"] = create_array();
 var __str___init__ = function(args, kwargs) {
@@ -1509,7 +1505,7 @@ window["__str___iter__"] = __str___iter__
 __str___iter__.pythonscript_function = true;
 window["__str_attrs"]["__iter__"] = __str___iter__;
 str = create_class("str", window["__str_parents"], window["__str_attrs"]);
-var array, __array_attrs, __array_parents;
+var array;
 window["__array_attrs"] = Object();
 window["__array_parents"] = create_array();
 __array_typecodes = get_attribute(dict, "__call__")([], {"js_object": [{"key": "c", "value": 1}, {"key": "b", "value": 1}, {"key": "B", "value": 1}, {"key": "u", "value": 2}, {"key": "h", "value": 2}, {"key": "H", "value": 2}, {"key": "i", "value": 4}, {"key": "I", "value": 4}, {"key": "l", "value": 4}, {"key": "L", "value": 4}, {"key": "f", "value": 4}, {"key": "d", "value": 8}, {"key": "float32", "value": 4}, {"key": "float16", "value": 2}, {"key": "float8", "value": 1}]});

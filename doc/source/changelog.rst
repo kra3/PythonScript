@@ -15,7 +15,6 @@ New
 
 - added support for subscript ``[]`` operator
 - added simple generators via ``yield``
-- added multiple targets ``a, b, c = funk()``
 - added support of inplace assignements
 - added support for operator overloading
 - added support for get ``__getattr__`` and set ``__setattr__`` attribute overloading

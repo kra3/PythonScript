@@ -1,4 +1,4 @@
-var J, __J_attrs, __J_parents;
+var J;
 window["__J_attrs"] = Object();
 window["__J_parents"] = create_array();
 var __J___init__ = function(args, kwargs) {

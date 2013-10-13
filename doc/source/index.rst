@@ -18,6 +18,7 @@ Getting started
 
    howtos
    django
+   broken
 
 Internals
 =========
