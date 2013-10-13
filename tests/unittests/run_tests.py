@@ -65,7 +65,7 @@ def run_tests(directory, translator):
                 f.write(r.std_out)
             r = run('nodejs %s.exec' % compiled_file)
             if r.status_code != 0:
-                print r.std_err
+                print(r.std_err)
                 print('%s ERROR' % name)
                 continue
             with open('/tmp/%s.result' % name, 'w') as f:
