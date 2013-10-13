@@ -221,8 +221,8 @@ class MainHandler( tornado.web.RequestHandler ):
 
 
 LIBS = dict(
-	three = {'three.min.js' : os.path.expanduser( '~/three.js/build/three.min.js')},
-	tween = {'tween' : os.path.expanduser( '~/tween.js/build/tween.min.js')},
+	three = {'three.min.js' : os.path.abspath( '../libs/three.min.js')},
+	tween = {'tweenjs.min.js' : os.path.abspath( '../libs/tween.min.js')},
 )
 
 class LibsHandler( tornado.web.RequestHandler ):
