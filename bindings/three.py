@@ -2,9 +2,40 @@
 # by Brett Hartshorn - copyright 2013
 # License: PSFLv2 - http://www.python.org/psf/license/
 
+class Color:
+	def __init__(self, red=1.0, green=1.0, blue=1.0, object=None ):
+		if object:
+			self._color = object
+		else:
+			self._color = JS('new THREE.Color()')
+			self.setRGB(red=red, green=green, blue=blue)
+
+	def setRGB(self, red=1.0, green=1.0, blue=1.0):
+		color = self._color
+		JS('color.setRGB(red, green, blue)')
+
+	@property
+	def r(self):
+		color = self._color
+		return JS('color.r')
+	@property
+	def g(self):
+		color = self._color
+		return JS('color.g')
+	@property
+	def b(self):
+		color = self._color
+		return JS('color.b')
+
+	def clone(self):
+		return Color( red=self.r, green=self.g, blue=self.b )
+
 class Vector3:
-	def __init__(self, x=0, y=0, z=0 ):
-		self._vec = JS('new THREE.Vector3(x,y,z)')
+	def __init__(self, x=0, y=0, z=0, object=None ):
+		if object:
+			self._vec = object
+		else:
+			self._vec = JS('new THREE.Vector3(x,y,z)')
 
 	@property
 	def x(self):
@@ -64,7 +95,18 @@ class Vector3:
 		self.set( self.x+other.x, self.y+other.y, self.z+other.z )
 		return self
 
-	#def __iadd__(self, other):
+	def __add__(self, other):
+		if JS("{}.toString.call(other) === '[object Object]'"):
+			assert isinstance(other, Vector3)
+			return Vector3( self.x+other.x, self.y+other.y, self.z+other.z )
+		else:
+			return Vector3( self.x+other, self.y+other, self.z+other )
+
+	def __iadd__(self, other):
+		if JS("{}.toString.call(other) === '[object Object]'"):
+			self.add( other )
+		else:
+			self.addScalar( other )
 
 	def addScalar(self, s):
 		self.set( self.x+s, self.y+s, self.z+s )
@@ -80,6 +122,19 @@ class Vector3:
 		self.set( self.x-other.x, self.y-other.y, self.z-other.z )
 		return self
 
+	def __sub__(self, other):
+		if JS("{}.toString.call(other) === '[object Object]'"):
+			assert isinstance(other, Vector3)
+			return Vector3( self.x-other.x, self.y-other.y, self.z-other.z )
+		else:
+			return Vector3( self.x-other, self.y-other, self.z-other )
+
+	def __isub__(self, other):
+		if JS("{}.toString.call(other) === '[object Object]'"):
+			self.sub( other )
+		else:
+			self.set( self.x-other, self.y-other, self.z-other )
+
 	def subVectors(self, a,b):
 		var( a=Vector3, b=Vector3 )
 		self.set( a.x-b.x, a.y-b.y, a.z-b.z )
@@ -89,6 +144,19 @@ class Vector3:
 		assert isinstance(other, Vector3)
 		self.set( self.x*other.x, self.y*other.y, self.z*other.z )
 		return self
+
+	def __mul__(self, other):
+		if JS("{}.toString.call(other) === '[object Object]'"):
+			assert isinstance(other, Vector3)
+			return Vector3( self.x*other.x, self.y*other.y, self.z*other.z )
+		else:
+			return Vector3( self.x*other, self.y*other, self.z*other )
+
+	def __imul__(self, other):
+		if JS("{}.toString.call(other) === '[object Object]'"):
+			self.multiply( other )
+		else:
+			self.multiplyScalar( other )
 
 	def multiplyScalar(self, s):
 		self.set( self.x*s, self.y*s, self.z*s )
@@ -114,6 +182,139 @@ class Vector3:
 		JS('vec.applyProjection(m)')
 		return self
 
+	def applyQuaternion(self, q):
+		vec = self._vec
+		JS('vec.applyQuaternion(q)')
+		return self
+
+	def transformDirection(self, m):
+		vec = self._vec
+		JS('vec.transformDirection(m)')
+		return self
+
+	def divide(self, other):
+		assert isinstance(other, Vector3)
+		self.set( self.x/other.x, self.y/other.y, self.z/other.z )
+		return self
+
+	def divideScalar(self, s):
+		vec = self._vec
+		JS('vec.divideScalar(s)')  ## takes care of divide by zero
+		return self
+
+	def __div__(self, other):
+		if JS("{}.toString.call(other) === '[object Object]'"):
+			assert isinstance(other, Vector3)
+			return Vector3( self.x/other.x, self.y/other.y, self.z/other.z )
+		else:
+			return Vector3( self.x/other, self.y/other, self.z/other )
+
+	def __idiv__(self, other):
+		if JS("{}.toString.call(other) === '[object Object]'"):
+			self.divide( other )
+		else:
+			self.divideScalar( other )
+
+	def min(self, s):
+		vec = self._vec
+		JS('vec.min(s)')
+		return self
+	def max(self, s):
+		vec = self._vec
+		JS('vec.max(s)')
+		return self
+	def clamp(self, s):
+		vec = self._vec
+		JS('vec.clamp(s)')
+		return self
+	def negate(self):
+		vec = self._vec
+		JS('vec.negate()')
+		return self
+
+	def dot(self, v):
+		vec = self._vec
+		return JS('vec.dot(v)')
+	def lengthSq(self):
+		vec = self._vec
+		return JS('vec.lengthSq()')
+	def length(self):
+		vec = self._vec
+		return JS('vec.length()')
+	def lengthManhattan(self):
+		vec = self._vec
+		return JS('vec.lengthManhattan()')
+
+	def normalize(self):
+		vec = self._vec
+		JS('vec.normalize()')
+		return self
+
+	def setLength(self, l):
+		vec = self._vec
+		JS('vec.setLength(l)')
+		return self
+
+	def lerp(self, v, alpha):
+		vec = self._vec
+		JS('vec.lerp(v, alpha)')
+		return self
+
+	def cross(self, v):  ## cross product
+		vec = self._vec
+		JS('vec.cross(v)')
+		return self
+
+	def crossVectors(self, a,b):
+		vec = self._vec
+		JS('vec.crossVectors(a,b)')
+		return self
+
+	def __ixor__(self, other):  ## ^=
+		self.cross(other)
+
+	def angleTo(self, v):
+		vec = self._vec
+		return JS('vec.angleTo(v)')
+
+	def distanceTo(self, v):
+		vec = self._vec
+		return JS('vec.distanceTo(v)')
+
+	def distanceToSquared(self, v):
+		vec = self._vec
+		return JS('vec.distanceToSquared(v)')
+
+	def getPositionFromMatrix(self, m):
+		vec = self._vec
+		JS('vec.getPositionFromMatrix(m)')
+		return self
+
+	def getScaleFromMatrix(self, m):
+		vec = self._vec
+		JS('vec.getScaleFromMatrix(m)')
+		return self
+
+	def getColumnFromMatrix(self, i, m):
+		vec = self._vec
+		JS('vec.getColumnFromMatrix(i,m)')
+		return self
+
+	def equals(self, v):
+		vec = self._vec
+		return JS('vec.equals(v)')
+
+	def fromArray(self, a):
+		vec = self._vec
+		JS('vec.fromArray(a)')
+		return self
+
+	def toArray(self):
+		vec = self._vec
+		return JS('vec.toArray()')
+
+	def clone(self):
+		return Vector3( self.x, self.y, self.z )
 
 
 class _ObjectBase:
@@ -127,11 +328,11 @@ class _Camera( _ObjectBase ):
 		ob = self._object
 		JS('ob.updateProjectionMatrix()')
 
-class _OrthographicCamera( _Camera ):
+class OrthographicCamera( _Camera ):
 	def __init__(self, left, right, top, bottom, near, far):
 		self._object = JS('new THREE.OrthographicCamera(left, right, top, bottom, near, far)')
 
-class _PerspectiveCamera( _Camera ):
+class PerspectiveCamera( _Camera ):
 	def __init__(self, fov, aspect, near, far):
 		self._object = JS('new THREE.PerspectiveCamera(fov, aspect, near, far)')
 
@@ -151,14 +352,28 @@ class _PerspectiveCamera( _Camera ):
 		ob = self._object
 		JS('ob.setViewOffset(fullWidth, fullHeight, x, y, width, height)')
 
+	@property
+	def position(self):
+		vec = self._object.position
+		return Vector3( object=vec )
 
-class _Scene:
+	def get_position(self):
+		vec = self._object.position
+		return Vector3( object=vec )
+
+
+class Scene:
 	def __init__(self):
 		self._scene = JS('new THREE.Scene()')
 
 	def add(self, child):
 		scene = self._scene
-		JS('scene.add(child)')
+		c = child._object
+		JS('scene.add(c)')
+
+	def updateMatrixWorld(self):
+		scene = self._scene
+		JS('scene.updateMatrixWorld()')
 
 
 class _Renderer:
@@ -168,20 +383,38 @@ class _Renderer:
 
 	def setClearColor(self, red=1.0, green=1.0, blue=1.0, alpha=1.0):
 		renderer = self._renderer
-		JS('renderer.setClearColor( {r:red, g:green, b:blue}, alpha)')
+		clr = Color( red=red, green=green, blue=blue )
+		c = clr._color
+		JS('renderer.setClearColor( c, alpha)')
 
-
-class _CSS3DRenderer( _Renderer ):
-	def __init__(self):
-		self._renderer = JS('new THREE.CSS3DRenderer()')
-
-	def getDomElement(self):
+	@property
+	def domElement(self):
 		renderer = self._renderer
 		return JS('renderer.domElement')
 
-class _WebGLRenderer( _Renderer ):
+	def render(self, scn, cam):
+		renderer = self._renderer
+		s = scn._scene; c = cam._object
+		return JS('renderer.render(s, c)')
+
+
+class CanvasRenderer( _Renderer ):
+	def __init__(self):
+		self._renderer = JS('new THREE.CanvasRenderer()')
+
+
+class CSS3DRenderer( _Renderer ):
+	def __init__(self):
+		self._renderer = JS('new THREE.CSS3DRenderer()')
+
+
+class WebGLRenderer( _Renderer ):
 	def __init__(self):
 		self._renderer = JS('new THREE.WebGLRenderer()')
+
+	def getContext(self):
+		renderer = self._renderer
+		return JS('renderer.getContext()')
 
 
 class _ImageUtils:
@@ -193,24 +426,41 @@ class _ImageUtils:
 		JS('var _mapping = new THREE.CubeReflectionMapping()')
 		return JS('THREE.ImageUtils.loadTextureCube(urls, _mapping)')
 
-class _Three:
-	def __init__(self):
-		self.ImageUtils = _ImageUtils()
-		self.Vector3 = Vector3
+ImageUtils = _ImageUtils()
 
-	def Scene(self):
-		return _Scene()
+class _Material:
+	pass
 
-	def CSS3DRenderer(self):
-		return _CSS3DRenderer()
+class MeshBasicMaterial( _Material ):
+	def __init__(self, color=None, wireframe=False):
+		if not color: color = Color()
+		else: #elif isinstance(color, dict):
+			color = Color(red=color['red'], green=color['green'], blue=color['blue'])
+		clr = color._color
+		self._object = JS('new THREE.MeshBasicMaterial( {color:clr, wireframe:wireframe} )')
 
-	def WebGLRenderer(self):
-		return _WebGLRenderer()
+class CubeGeometry:
+	def __init__(self, width, height, length):
+		self._object = JS('new THREE.CubeGeometry(width, height, length)')
 
-	def PerspectiveCamera(self, fov, aspect, near, far):
-		return _PerspectiveCamera(fov, aspect, near, far)
 
-	def OrthographicCamera(left, right, top, bottom, near, far):
-		return _OrthographicCamera(left, right, top, bottom, near, far)
+class Mesh:
+	def __init__(self, geometry, material):
+		g = geometry._object
+		m = material._object
+		self._object = JS('new THREE.Mesh(g,m)')
 
-Three = _Three()
+	@property
+	def position(self):
+		vec = self._object.position
+		return Vector3( object=vec )
+
+	@property
+	def rotation(self):
+		vec = self._object.rotation
+		return Vector3( object=vec )
+
+	@property
+	def scale(self):
+		vec = self._object.scale
+		return Vector3( object=vec )

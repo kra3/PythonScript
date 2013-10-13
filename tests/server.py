@@ -13,7 +13,7 @@ except ImportError:
 
 import tornado.ioloop
 import tornado.web
-import os, subprocess
+import os, sys, subprocess, datetime
 
 PATHS = dict(
 	webroot = os.path.dirname(os.path.abspath(__file__)),
@@ -22,19 +22,25 @@ PATHS = dict(
 	closure = os.path.expanduser( '~/closure-compiler/compiler.jar'),
 	runtime = os.path.abspath('../pythonscript.js'),
 	module_cache = '/tmp',
+
+	runtime_pythonjs = os.path.abspath('../runtime/pythonpythonjs.py'),  ## handwritten pythonjs
+	runtime_builtins = os.path.abspath('../runtime/builtins.py'),
+
 )
 
 
 
-def python_to_pythonjs( src, module=None ):
+def python_to_pythonjs( src, module=None, global_variable_scope=False ):
 	cmdheader = '#!%s' %PATHS['module_cache']
 	if module:
 		assert '.' not in module
 		cmdheader += ';' + module
 	cmdheader += '\n'
 
+	cmd = ['python2', os.path.join( PATHS['pythonscript'], 'python_to_pythonjs.py')]
+	if global_variable_scope: cmd.append('--global-variable-scope')
 	p = subprocess.Popen(
-		['python2', os.path.join( PATHS['pythonscript'], 'python_to_pythonjs.py')],
+		cmd,
 		stdin = subprocess.PIPE,
 		stdout = subprocess.PIPE
 	)
@@ -64,9 +70,15 @@ def pythonjs_to_javascript( src, closure_compiler=False ):
 
 	return a
 
-def python_to_javascript( src, module=None, closure_compiler=False, debug=False ):
-	a = python_to_pythonjs( src, module=module )
+def python_to_javascript( src, module=None, closure_compiler=False, debug=False, dump=False, global_variable_scope=False ):
+	a = python_to_pythonjs( src, module=module, global_variable_scope=global_variable_scope )
 	if debug: print( a )
+	if dump:
+		if isinstance(dump, str):
+			open(dump, 'wb').write( a.encode('utf-8') )
+		else:
+			open('/tmp/pythonjs.dump', 'wb').write( a.encode('utf-8') )
+
 	return pythonjs_to_javascript( a, closure_compiler=closure_compiler )
 
 
@@ -138,6 +150,29 @@ def convert_python_html_document( data ):
 			doc.append( line )
 
 	return '\n'.join( doc )
+
+
+def regenerate_runtime():
+	print('regenerating pythonscript runtime...')
+	a = '// PythonScript Runtime - regenerated on: %s' %datetime.datetime.now().ctime()
+	b = pythonjs_to_javascript(
+		open(PATHS['runtime_pythonjs'],'rb').read().decode('utf-8'),
+	)
+	if not b.strip():
+		raise RuntimeError
+	c = python_to_javascript(
+		open(PATHS['runtime_builtins'],'rb').read().decode('utf-8'),
+		dump='/tmp/runtime-builtins.dump.py',
+		global_variable_scope = False ## this should be safe
+	)
+	if not c.strip():
+		raise RuntimeError
+
+	src = '\n'.join( [a,b.strip(),c.strip()] )
+	file = open( PATHS['runtime'], 'wb')
+	file.write( src.encode('utf-8') )
+	file.close()
+	return src
 
 class MainHandler( tornado.web.RequestHandler ):
 	def get(self, path=None):
@@ -217,13 +252,17 @@ if __name__ == '__main__':
 	assert os.path.isdir( PATHS['pythonscript'] )
 	assert os.path.isdir( PATHS['bindings'] )
 
-	app = tornado.web.Application(
-		Handlers,
-		#cookie_secret = 'some random text',
-		#login_url = '/login',
-		#xsrf_cookies = False,
-	)
+	if '--regenerate-runtime' in sys.argv:
+		data = regenerate_runtime()
+		print(data)
 
-
-	app.listen( 8080 )
-	tornado.ioloop.IOLoop.instance().start()
+	else:
+		print('running server on localhost:8080')
+		app = tornado.web.Application(
+			Handlers,
+			#cookie_secret = 'some random text',
+			#login_url = '/login',
+			#xsrf_cookies = False,
+		)
+		app.listen( 8080 )
+		tornado.ioloop.IOLoop.instance().start()

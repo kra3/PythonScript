@@ -11,6 +11,9 @@ from ast import keyword
 from ast import Subscript
 from ast import Attribute
 from ast import FunctionDef
+from ast import BinOp
+from ast import Pass
+from ast import Global
 
 from ast import parse
 from ast import NodeVisitor
@@ -22,12 +25,28 @@ else:
     from cStringIO import StringIO as StringIO
 
 
+try:
+    _log_file = open('/tmp/python_to_pythonjs.log', 'wb')
+except:
+    _log_file = None
+def log(txt):
+    if _log_file:
+        _log_file.write( str(txt)+'\n' )
+        _log_file.flush()
+
+
+GLOBAL_VARIABLE_SCOPE = False              ## Python style
+if '--global-variable-scope' in sys.argv:  ## JavaScript style
+    GLOBAL_VARIABLE_SCOPE = True
+    log('not using python style variable scope')
+
 class Writer(object):
 
     def __init__(self):
         self.level = 0
         self.buffers = list()
         self.output = StringIO()
+        self.with_javascript = False
 
     def push(self):
         self.level += 1
@@ -46,6 +65,7 @@ class Writer(object):
 
     def _write(self, code):
         indentation = self.level * 4 * ' '
+        if self.with_javascript: code = """JS('''%s''')"""%code
         self.output.write('%s%s\n' % (indentation, code))
 
     def getvalue(self):
@@ -63,6 +83,70 @@ MINI_STDLIB = {
         'random': 'var random = Math.random'
     }
 }
+
+class Typedef(object):
+    # http://docs.python.org/2/reference/datamodel.html#emulating-numeric-types
+    _opmap = dict(
+        __add__ = '+',
+        __iadd__ = '+=',
+        __sub__ = '-',
+        __isub__ = '-=',
+        __mul__ = '*',
+        __imul__ = '*=',
+        __div__ = '/',
+        __idiv__ = '/=',
+        __mod__ = '%',
+        __imod__ = '%=',
+        __lshift__ = '<<',
+        __ilshift__ = '<<=',
+        __rshift__ = '>>',
+        __irshift__ = '>>=',
+        __and__ = '&',
+        __iand__ = '&=',
+        __xor__ = '^',
+        __ixor__ = '^=',
+        __or__ = '|',
+        __ior__ = '|=',
+    )
+
+    def __init__(self, **kwargs):
+        for name in kwargs.keys():
+            setattr( self, name, kwargs[name] )
+
+        self.operators = dict()
+        for name in self.methods:
+            if name in self._opmap:
+                op = self._opmap[ name ]
+                self.operators[ op ] = self.get_pythonjs_function_name( name )
+
+    def get_pythonjs_function_name(self, name):
+        assert name in self.methods
+        return '__%s_%s' %(self.name, name) ## class name
+
+    def check_for_parent_with(self, method=None, property=None, operator=None, class_attribute=None):
+        log('check_for_parent_with: %s'%locals())
+        log('self.parents: %s'%self.parents)
+
+        for parent_name in self.parents:
+            typedef = self.compiler.get_typedef( class_name=parent_name )
+            if method and method in typedef.methods:
+                return typedef
+            elif property and property in typedef.properties:
+                return typedef
+            elif operator and typedef.operators:
+                return typedef
+            elif class_attribute in typedef.class_attributes:
+                return typedef
+            elif typedef.parents:
+                res = typedef.check_for_parent_with(
+                    method=method, 
+                    property=property, 
+                    operator=operator,
+                    class_attribute=class_attribute
+                )
+                if res:
+                    return res
+
 class PythonToPythonJS(NodeVisitor):
 
     identifier = 0
@@ -70,22 +154,66 @@ class PythonToPythonJS(NodeVisitor):
     def __init__(self, module=None, module_path=None):
         super(PythonToPythonJS, self).__init__()
         self._classes = dict()    ## class name : [method names]
-        self._inline_classes = dict()  ## class name : [attribute names]
+        self._class_parents = dict()  ## class name : parents
+        self._instance_attributes = dict()  ## class name : [attribute names]
+        self._class_attributes = dict()
         self._catch_attributes = None
-        self._names = set()
+        self._names = set() ## not used?
         self._instances = dict()  ## instance name : class name
         self._decorator_properties = dict()
         self._decorator_class_props = dict()
-
+        self._function_return_types = dict()
+        self._return_type = None
         self._module = module
         self._module_path = module_path
+        self._with_js = False
+        self._typedefs = dict()  ## class name : typedef  (not pickled)
+        self.setup_builtins()
+
+    def setup_builtins(self):
+        self._classes['dict'] = set(['__getitem__', '__setitem__'])
+        self._classes['list'] = set(['__getitem__', '__setitem__'])
+        self._classes['tuple'] = set(['__getitem__', '__setitem__'])
+        self._builtins = set(['dict', 'list', 'tuple'])
+
+    def get_typedef(self, instance=None, class_name=None):
+        assert instance or class_name
+        if isinstance(instance, Name) and instance.id in self._instances:
+            class_name = self._instances[ instance.id ]
+
+        if class_name:
+            #assert class_name in self._classes
+            if class_name not in self._classes:
+                log('ERROR: class name not in self._classes: %s'%class_name)
+                log('self._classes: %s'%self._classes)
+                raise RuntimeError('class name: %s - not found in self._classes - node:%s '%(class_name, instance))
+
+            if class_name not in self._typedefs:
+                self._typedefs[ class_name ] = Typedef(
+                    name = class_name,
+                    methods = self._classes[ class_name ],
+                    #properties = self._decorator_class_props[ class_name ],
+                    #attributes = self._instance_attributes[ class_name ],
+                    #class_attributes = self._class_attributes[ class_name ],
+                    #parents = self._class_parents[ class_name ],
+                    properties = self._decorator_class_props.get(  class_name, set()),
+                    attributes = self._instance_attributes.get(    class_name, set()),
+                    class_attributes = self._class_attributes.get( class_name, set()),
+                    parents = self._class_parents.get(             class_name, set()),
+
+                    compiler = self,
+                )
+            return self._typedefs[ class_name ]
 
     def save_module(self):
         if self._module and self._module_path:
             a = dict(
                 classes = self._classes,
-                inline_classes = self._inline_classes,
+                instance_attributes = self._instance_attributes,
+                class_attributes = self._class_attributes,
                 decorator_class_props = self._decorator_class_props,
+                function_return_types = self._function_return_types,
+                class_parents = self._class_parents,
             )
             pickle.dump( a, open(os.path.join(self._module_path, self._module+'.module'), 'wb') )
 
@@ -99,72 +227,106 @@ class PythonToPythonJS(NodeVisitor):
             f = open( os.path.join(self._module_path, node.module+'.module'), 'rb' )
             a = pickle.load( f ); f.close()
             self._classes.update( a['classes'] )
-            self._inline_classes.update( a['inline_classes'] )
+            self._class_attributes.update( a['class_attributes'] )
+            self._instance_attributes.update( a['instance_attributes'] )
             self._decorator_class_props.update( a['decorator_class_props'] )
+            self._function_return_types.update( a['function_return_types'] )
+            self._class_parents.update( a['class_parents'] )
 
     def visit_Assert(self, node):
         ## hijacking "assert isinstance(a,A)" as a type system ##
-        if isinstance( node.test, Call ) and node.test.func.id == 'isinstance':
+        if isinstance( node.test, Call ) and isinstance(node.test.func, Name) and node.test.func.id == 'isinstance':
             a,b = node.test.args
             if b.id in self._classes:
                 self._instances[ a.id ] = b.id
 
+    def visit_Dict(self, node):
+        node.returns_type = 'dict'
+        #keys = [x.s for x in node.keys]
+        #values = map(self.visit, node.values)
+        #a = [ '%s=%s'%x for x in zip(keys, values) ]
+        #b = 'JSObject(%s)' %', '.join(a)
+        #return 'get_attribute(dict, "__call__")([], JSObject(js_object=%s))' %b
+        a = []
+        for i in range( len(node.keys) ):
+            k = self.visit( node.keys[ i ] )
+            v = self.visit( node.values[i] )
+            if self._with_js:
+                a.append( '%s:%s'%(k,v) )
+            else:
+                a.append( 'JSObject(key=%s, value=%s)'%(k,v) )
+        if self._with_js:
+            b = ','.join( a )
+            return '{ %s }' %b
+        else:
+            b = '[%s]' %', '.join(a)
+            return 'get_attribute(dict, "__call__")([], JSObject(js_object=%s))' %b
+
     def visit_Tuple(self, node):
-        ## TODO how to deal with tuples
-        return '(%s)' % ', '.join(map(self.visit, node.elts))
+        a = '[%s]' % ', '.join(map(self.visit, node.elts))
+        return 'get_attribute(tuple, "__call__")([], JSObject(js_object=%s))' %a
 
     def visit_List(self, node):
-        return 'get_attribute(list, "__call__")(create_array([%s]), Object())' % ', '.join(map(self.visit, node.elts))
+        a = '[%s]' % ', '.join(map(self.visit, node.elts))
+        if self._with_js:
+            return a
+        else:
+            return 'get_attribute(list, "__call__")([], JSObject(js_object=%s))' %a
 
     def visit_In(self, node):
         return ' in '
 
     def visit_AugAssign(self, node):
-        a = '%s %s= %s' %(self.visit(node.target), self.visit(node.op), self.visit(node.value))
-        writer.write(a)
+        target = self.visit( node.target )
+        op = '%s=' %self.visit( node.op )
+
+        typedef = self.get_typedef( node.target )
+        if typedef and op in typedef.operators:
+            func = typedef.operators[ op ]
+            a = '%s( [%s, %s] )' %(func, target, self.visit(node.value))
+            writer.write( a )
+        else:
+            ## TODO extra checks to make sure the operator type is valid in this context
+            a = '%s %s %s' %(target, op, self.visit(node.value))
+            writer.write(a)
 
     def visit_Yield(self, node):
         return 'yield %s' % self.visit(node.value)
 
-    def _gen_getattr_helper(self, class_name, func_name):
-        '''
-        This helper is used to emulate how Python works, __getattr__ is only supposed
-        to be called when the attribute is not found on the instance.
-        '''
-        a = [
-            'def __%s____getattr_helper(args, kwargs):' %class_name,
-            '  var(signature, arguments)',
-            '  signature = JSObject(kwargs=JSObject(), args=JSArray("self", "name"))',
-            '  arguments = get_arguments(signature, args, kwargs)',
-            '''  JS("var self = arguments['self']")''',
-            '''  JS("var name = arguments['name']")''',
-            '  if name in get_attribute(self, "__dict__"):',
-            '    return get_attribute(getattr, "__call__")( JSArray(self,name), JSObject() )',
-            '  else:',
-            '    return %s( [self, name] )' %func_name
-        ]
-        return '\n'.join(a)
 
     def visit_ClassDef(self, node):
         name = node.name
+        log('ClassDef: %s'%name)
         self._classes[ name ] = list()  ## method names
+        self._class_parents[ name ] = set()
+        self._class_attributes[ name ] = set()
         self._catch_attributes = None
         self._decorator_properties = dict() ## property names :  {'get':func, 'set':func}
         self._decorator_class_props[ name ] = self._decorator_properties
         self._instances[ 'self' ] = name
 
-        for dec in node.decorator_list:
-            if isinstance(dec, Name) and dec.id == 'inline':
-                self._catch_attributes = set()
+        #for dec in node.decorator_list:  ## TODO class decorators
+        #    if isinstance(dec, Name) and dec.id == 'inline':  ## @inline class decorator is DEPRECATED
+        #        self._catch_attributes = set()
+        ## always catch attributes ##
+        self._catch_attributes = set()
+        self._instance_attributes[ name ] = self._catch_attributes
+
 
         writer.write('var(%s, __%s_attrs, __%s_parents)' % (name, name, name))
-        writer.write('__%s_attrs = JSObject()' % name)
-        writer.write('__%s_parents = JSArray()' % name)
+        writer.write('window["__%s_attrs"] = JSObject()' % name)
+        writer.write('window["__%s_parents"] = JSArray()' % name)
         for base in node.bases:
             code = '__%s_parents.push(%s)' % (name, self.visit(base))
             writer.write(code)
+            if isinstance(base, Name):
+                self._class_parents[ name ].add( base.id )
+            else:
+                raise NotImplementedError
+
         for item in node.body:
             if isinstance(item, FunctionDef):
+                log('  method: %s'%item.name)
                 self._classes[ name ].append( item.name )
                 item_name = item.name
                 item.original_name = item.name
@@ -175,25 +337,24 @@ class PythonToPythonJS(NodeVisitor):
                 if item_name in self._decorator_properties:
                     pass
                 else:
-                    writer.write('__%s_attrs["%s"] = %s' % (name, item_name, item.name))
+                    writer.write('window["__%s_attrs"]["%s"] = %s' % (name, item_name, item.name))
 
-                if item_name == '__getattr__':
-                    writer.write( self._gen_getattr_helper(name, item.name) )
-
-            elif isinstance(item, Assign):
+            elif isinstance(item, Assign) and isinstance(item.targets[0], Name):
                 item_name = item.targets[0].id
-                item.targets[0].id = '__%s_%s' % (name.id, item_name)
+                item.targets[0].id = '__%s_%s' % (name, item_name)
                 self.visit(item)  # this will output the code for the assign
-                writer.write('%s_attrs["%s"] = %s' % (name, item_name, item.targets[0].id))
-
-        if self._catch_attributes:
-            self._inline_classes[ name ] = self._catch_attributes
+                writer.write('window["__%s_attrs"]["%s"] = %s' % (name, item_name, item.targets[0].id))
+                self._class_attributes[ name ].add( item_name )  ## should this come before self.visit(item) ??
+            elif isinstance(item, Pass):
+                pass
+            else:
+                raise NotImplementedError
 
         self._catch_attributes = None
         self._decorator_properties = None
         self._instances.pop('self')
 
-        writer.write('%s = create_class("%s", __%s_parents, __%s_attrs)' % (name, name, name, name))
+        writer.write('%s = create_class("%s", window["__%s_parents"], window["__%s_attrs"])' % (name, name, name, name))
 
     def visit_If(self, node):
         writer.write('if %s:' % self.visit(node.test))
@@ -238,13 +399,33 @@ class PythonToPythonJS(NodeVisitor):
 
     def visit_Return(self, node):
         if node.value:
-            return writer.write('return %s' % self.visit(node.value))
-        return writer.write('return undefined')
+            if isinstance(node.value, Call) and isinstance(node.value.func, Name) and node.value.func.id in self._classes:
+                self._return_type = node.value.func.id
+            elif isinstance(node.value, Name) and node.value.id == 'self' and 'self' in self._instances:
+                self._return_type = self._instances['self']
+
+            writer.write('return %s' % self.visit(node.value))
+
+        else:
+            raise RuntimeError
 
     def visit_BinOp(self, node):
         left = self.visit(node.left)
         op = self.visit(node.op)
         right = self.visit(node.right)
+        #if isinstance(node.left, Name) and node.left.id in self._instances:
+        #    klass = self._instances[ node.left.id ]
+        #    if op == '*' and '__mul__' in self._classes[klass]:
+        #        node.operator_overloading = '__%s___mul__' %klass
+        #        assert node.operator_overloading
+        #        return '''JS('__%s___mul__( [%s, %s] )')''' %(klass, left, right)
+        if isinstance(node.left, Name):
+            typedef = self.get_typedef( node.left )
+            if typedef and op in typedef.operators:
+                func = typedef.operators[ op ]
+                node.operator_overloading = func
+                return '''JS('%s( [%s, %s] )')''' %(func, left, right)
+
         return '%s %s %s' % (left, op, right)
 
     def visit_Eq(self, node):
@@ -264,6 +445,21 @@ class PythonToPythonJS(NodeVisitor):
 
     def visit_Sub(self, node):
         return '-'
+
+    def visit_Div(self, node):
+        return '/'
+    def visit_Mod(self, node):
+        return '%'
+    def visit_LShift(self, node):
+        return '<<'
+    def visit_RShift(self, node):
+        return '>>'
+    def visit_BitXor(self, node):
+        return '^'
+    def visit_BitOr(self, node):
+        return '|'
+    def visit_BitAnd(self, node):
+        return '&'
 
     def visit_Lt(self, node):
         return '<'
@@ -290,50 +486,60 @@ class PythonToPythonJS(NodeVisitor):
         return self.visit(node.op) + self.visit(node.operand)
 
     def visit_Attribute(self, node):
-        name = self.visit(node.value)
-        if name in self._instances:  ## support '.' operator overloading
-            klass = self._instances[ name ]
-            if '__getattr__' in self._classes[ klass ]:
-                if klass in self._inline_classes:  ## static attribute
-                    if node.attr in self._inline_classes[klass]:
-                        #return '''JS('%s.__dict__["%s"]')''' %(name, node.attr)  ## this is not ClosureCompiler compatible
-                        return '''JS('%s["__dict__"]["%s"]')''' %(name, node.attr)
-                    elif node.attr in self._classes[ klass ]: ## method
-                        return '''JS('__%s_attrs["%s"]')''' %(klass, node.attr)
-                    elif klass in self._decorator_class_props and node.attr in self._decorator_class_props[klass]:
-                        getter = self._decorator_class_props[klass][node.attr]['get']
-                        return '''JS('%s( [%s] )')''' %(getter, name)
-                    else:
-                        return '''JS('__%s___getattr__( [%s, "%s"] )')''' %(klass, name, node.attr)
+        node_value = self.visit(node.value)
 
-                else:  ## dynamic python style
-                    return '__%s____getattr_helper( [%s, "%s"] )' % (klass, name, node.attr)
+        if self._with_js:
+            return '%s.%s' %(node_value, node.attr)
+        typedef = None
+        if isinstance(node.value, Name):
+            typedef = self.get_typedef( instance=node.value )
+        elif hasattr(node.value, 'returns_type'):
+            typedef = self.get_typedef( class_name=node.value.returns_type )
+
+        if typedef:
+            if node.attr in typedef.properties:
+                getter = typedef.properties[ node.attr ]['get']
+                if getter in self._function_return_types:
+                    node.returns_type = self._function_return_types[getter]
+                return '%s( [%s] )' %(getter, node_value)
+            elif node.attr in typedef.class_attributes:
+                return "%s['__class__']['__dict__']['%s']" %(node_value, node.attr)
+            elif node.attr in typedef.attributes:
+                return "%s['__dict__']['%s']" %(node_value, node.attr)
+            elif '__getattr__' in typedef.methods:
+                func = typedef.get_pythonjs_function_name( '__getattr__' )
+                return '%s([%s, "%s"])' %(func, node_value, node.attr)
+
+            elif typedef.check_for_parent_with( property=node.attr ):
+                parent = typedef.check_for_parent_with( property=node.attr )
+                getter = parent.properties[ node.attr ]['get']
+                if getter in self._function_return_types:
+                    node.returns_type = self._function_return_types[getter]
+                return '%s( [%s] )' %(getter, node_value)
+            elif typedef.check_for_parent_with( class_attribute=node.attr ):
+                #return 'get_attribute(%s, "%s")' % (node_value, node.attr)  ## get_attribute is broken with grandparent class attributes
+                parent = typedef.check_for_parent_with( class_attribute=node.attr )
+                return "window['__%s_attrs']['%s']" %(parent.name, node.attr)
+            elif typedef.check_for_parent_with( method='__getattr__' ):
+                parent = typedef.check_for_parent_with( method='__getattr__' )
+                func = parent.get_pythonjs_function_name( '__getattr__' )
+                return '%s([%s, "%s"])' %(func, node_value, node.attr)
+
             else:
-                if klass in self._inline_classes:  ## static attribute
-                    if node.attr in self._inline_classes[klass]:
-                        return '''JS('%s["__dict__"]["%s"]')''' %(name, node.attr)
-                    elif node.attr in self._classes[ klass ]: ## method
-                        return '''JS('__%s_attrs["%s"]')''' %(klass, node.attr)
-                    elif klass in self._decorator_class_props and node.attr in self._decorator_class_props[klass]:
-                        getter = self._decorator_class_props[klass][node.attr]['get']
-                        return '''JS('%s( [%s] )')''' %(getter, name)
-                    else:
-                        return '''JS('__%s___getattr__( [%s, "%s"] )')''' %(klass, name, node.attr)
-
-                elif klass in self._decorator_class_props and node.attr in self._decorator_class_props[klass]:
-                    getter = self._decorator_class_props[klass][node.attr]['get']
-                    return '''JS('%s( [%s] )')''' %(getter, name)
-
-                else:
-                    return 'get_attribute(%s, "%s")' % (name, node.attr)
+                return 'get_attribute(%s, "%s")' % (node_value, node.attr)
         else:
-            return 'get_attribute(%s, "%s")' % (name, node.attr)
+            return 'get_attribute(%s, "%s")' % (node_value, node.attr)
+
 
     def visit_Index(self, node):
         return self.visit(node.value)
 
     def visit_Subscript(self, node):
         name = self.visit(node.value)
+
+        if self._with_js:
+            return '%s[ %s ]' %(name, self.visit(node.slice))
+
         if name in self._instances:  ## support x[y] operator overloading
             klass = self._instances[ name ]
             if '__getitem__' in self._classes[ klass ]:
@@ -356,46 +562,100 @@ class PythonToPythonJS(NodeVisitor):
         # XXX: support only one target for subscripts
         target = node.targets[0]
         if isinstance(target, Subscript):
-            code = "get_attribute(get_attribute('%s', '__setitem__'), '__call__')([%s, %s], JSObject())"
+            if self._with_js:
+                code = '%s[ %s ] = %s'
+            else:
+                code = "get_attribute(get_attribute(%s, '__setitem__'), '__call__')([%s, %s], JSObject())"
             code = code % (self.visit(target.value), self.visit(target.slice.value), self.visit(node.value))
             writer.write(code)
+
         elif isinstance(target, Attribute):
-            name = self.visit(target.value)
-            if name == 'self' and isinstance(self._catch_attributes, set):
-                self._catch_attributes.add( target.attr )
-
-            fallback = True
-            if name in self._instances:  ## support '.' operator overloading
-                klass = self._instances[ name ]
-                if klass in self._decorator_class_props and target.attr in self._decorator_class_props[klass]:
-                    setter = self._decorator_class_props[klass][target.attr].get( 'set', None )
-                    if setter:
-                        #writer.write( '''JS('%s( [%s, %s] )')''' %(setter, name, self.visit(node.value)) )  ## can not nest have nested JS() calls
-                        writer.write( '%s( [%s, %s] )' %(setter, name, self.visit(node.value)) )
-                        fallback = False
+            target_value = self.visit(target.value)  ## target.value may have "returns_type" after being visited
+            typedef = None
+            if isinstance(target.value, Name):
+                if target.value.id == 'self' and isinstance(self._catch_attributes, set):
+                    self._catch_attributes.add( target.attr )
+                typedef = self.get_typedef( instance=target.value )
+            elif hasattr(target.value, 'returns_type'):
+                typedef = self.get_typedef( class_name=target.value.returns_type )
 
 
-            if fallback:
+            if typedef and target.attr in typedef.properties and 'set' in typedef.properties[ target.attr ]:
+                setter = typedef.properties[ target.attr ]['set']
+                writer.write( '%s( [%s, %s] )' %(setter, target_value, self.visit(node.value)) )
+            elif typedef and target.attr in typedef.class_attributes:
+                writer.write( '''%s['__class__']['__dict__']['%s'] = %s''' %(target_value, target.attr, self.visit(node.value)))
+            elif typedef and target.attr in typedef.attributes:
+                writer.write( '''%s['__dict__']['%s'] = %s''' %(target_value, target.attr, self.visit(node.value)))
+
+            elif typedef and typedef.parents:
+                parent_prop = typedef.check_for_parent_with( property=target.attr )
+                parent_classattr = typedef.check_for_parent_with( class_attribute=target.attr )
+                parent_setattr = typedef.check_for_parent_with( method='__setattr__' )
+                if parent_prop and 'set' in parent_prop.properties[target.attr]:
+                    setter = parent_prop.properties[target.attr]['set']
+                    writer.write( '%s( [%s, %s] )' %(setter, target_value, self.visit(node.value)) )
+                elif parent_classattr:
+                    writer.write( "window['__%s_attrs']['%s'] = %s" %(parent_classattr.name, target.attr, self.visit(node.value)) )
+                elif parent_setattr:
+                    func = parent_setattr.get_pythonjs_function_name( '__setattr__' )
+                    writer.write( '%s([%s, "%s", %s])' %(func, target_value, target.attr, self.visit(node.value)) )
+
+                elif '__setattr__' in typedef.methods:
+                    func = typedef.get_pythonjs_function_name( '__setattr__' )
+                    writer.write( '%s([%s, "%s", %s])' %(func, target_value, target.attr, self.visit(node.value)) )
+
+                else:
+                    code = 'set_attribute(%s, "%s", %s)' % (
+                        target_value,
+                        target.attr,
+                        self.visit(node.value)
+                    )
+                    writer.write(code)
+
+            elif typedef and '__setattr__' in typedef.methods:
+                func = typedef.get_pythonjs_function_name( '__setattr__' )
+                log('__setattr__ in instance typedef.methods - func:%s target_value:%s target_attr:%s' %(func, target_value, target_attr))
+                writer.write( '%s([%s, "%s", %s])' %(func, target_value, target.attr, self.visit(node.value)) )
+
+
+            else:
                 code = 'set_attribute(%s, "%s", %s)' % (
-                    name,
+                    target_value,
                     target.attr,
                     self.visit(node.value)
                 )
                 writer.write(code)
 
         elif isinstance(target, Name):
+            node_value = self.visit( node.value )  ## node.value may have extra attributes after being visited
 
             if isinstance(node.value, Call) and hasattr(node.value.func, 'id') and node.value.func.id in self._classes:
                 self._instances[ target.id ] = node.value.func.id  ## keep track of instances
+            elif isinstance(node.value, Call) and isinstance(node.value.func, Name) and node.value.func.id in self._function_return_types:
+                self._instances[ target.id ] = self._function_return_types[ node.value.func.id ]
+            elif isinstance(node.value, Call) and isinstance(node.value.func, Attribute) and isinstance(node.value.func.value, Name) and node.value.func.value.id in self._instances:
+                typedef = self.get_typedef( node.value.func.value )
+                method = node.value.func.attr
+                if method in typedef.methods:
+                    func = typedef.get_pythonjs_function_name( method )
+                    if func in self._function_return_types:
+                        self._instances[ target.id ] = self._function_return_types[ func ]
+                    else:
+                        writer.write('## %s - unknown return type for: %s' % (typedef.name, func))
+                else:
+                    writer.write('## %s - not a method: %s' %(typedef.name, method))
+
+            elif isinstance(node.value, Name) and node_value in self._instances:  ## if this is a simple copy: "a = b" and "b" is known to be of some class
+                self._instances[ target.id ] = self._instances[ node_value ]
+            elif isinstance(node.value, BinOp) and hasattr(node.value, 'operator_overloading') and node.value.operator_overloading in self._function_return_types:
+                self._instances[ target.id ] = self._function_return_types[ node.value.operator_overloading ]
+            elif hasattr(node.value, 'returns_type'):
+                self._instances[ target.id ] = node.value.returns_type
             elif target.id in self._instances:
                 self._instances.pop( target.id )
 
-            if isinstance(node.value, Name):
-                name = self.visit(node.value)
-                if name in self._instances: self._instances[ target.id ] = self._instances[ name ]
-                writer.write('%s = %s' % (target.id, name))
-            else:
-                writer.write('%s = %s' % (target.id, self.visit(node.value)))
+            writer.write('%s = %s' % (target.id, node_value))
 
         else:  # it's a Tuple
             id = self.identifier
@@ -419,12 +679,20 @@ class PythonToPythonJS(NodeVisitor):
         writer.write('print %s' % ', '.join(map(self.visit, node.values)))
 
     def visit_Str(self, node):
-        return '"%s"' % node.s
+        if self._with_js:
+            return '"%s"' %node.s
+        else:
+            return '"""%s"""' % node.s
 
     def visit_Expr(self, node):
         writer.write(self.visit(node.value))
 
     def visit_Call(self, node):
+        if self._with_js:
+            args = list( map(self.visit, node.args) )
+            a = ','.join(args)
+            return '%s( %s )' %( self.visit(node.func), a )
+
         if hasattr(node.func, 'id') and node.func.id in ('JS', 'toString', 'JSObject', 'JSArray', 'var'):
             args = list( map(self.visit, node.args) ) ## map in py3 returns an iterator not a list
             if node.func.id == 'var':
@@ -439,35 +707,51 @@ class PythonToPythonJS(NodeVisitor):
         else:
 
             call_has_args = len(node.args) or len(node.keywords) or node.starargs or node.kwargs
+            name = self.visit(node.func)
 
             if call_has_args:
                 args = ', '.join(map(self.visit, node.args))
                 kwargs = ', '.join(map(lambda x: '%s=%s' % (x.arg, self.visit(x.value)), node.keywords))
                 args_name = '__args_%s' % self.identifier
                 kwargs_name = '__kwargs_%s' % self.identifier
+
                 writer.append('var(%s, %s)' % (args_name, kwargs_name))
                 self.identifier += 1
-                writer.append('%s = JSArray(%s)' % (args_name, args))
+
+                if name in ('list', 'tuple'):
+                    writer.write( '%s = JS("%s.__dict__.js_object")' % (args_name, args))
+                else:
+                    writer.append('%s = JSArray(%s)' % (args_name, args))
+
                 if node.starargs:
                     writer.append('%s.push.apply(%s, %s)' % (args_name, args_name, self.visit(node.starargs)))
                 writer.append('%s = JSObject(%s)' % (kwargs_name, kwargs))
+
                 if node.kwargs:
                     kwargs = self.visit(node.kwargs)
                     code = "JS('for (var name in %s) { %s[name] = %s[name]; }')" % (kwargs, kwargs_name, kwargs)
                     writer.append(code)
 
-            name = self.visit(node.func)
             if call_has_args:
-                return 'get_attribute(%s, "__call__")(%s, %s)' % (name, args_name, kwargs_name)
-            elif name in self._classes:
+                if name == 'dict':
+                    return 'get_attribute(%s, "__call__")(%s, JSObject(js_object=%s))' % (name, args_name, kwargs_name)
+                elif name in ('list', 'tuple'):
+                    return 'get_attribute(%s, "__call__")([], JSObject(js_object=%s))' % (name, args_name)
+                else:
+                    return 'get_attribute(%s, "__call__")(%s, %s)' % (name, args_name, kwargs_name)
+
+            elif name in self._classes or name in self._builtins:
                 return 'get_attribute(%s, "__call__")( JSArray(), JSObject() )' %name
-            else:
-                return '%s()' %name
+
+            else:  ## this could be a dangerous optimization ##
+                return '%s( JSArray(), JSObject() )' %name
 
     def visit_FunctionDef(self, node):
         property_decorator = None
         decorators = []
         for decorator in reversed(node.decorator_list):
+            log('@decorator: %s' %decorator)
+
             if isinstance(decorator, Name) and decorator.id == 'property':
                 property_decorator = decorator
                 n = node.name + '__getprop__'
@@ -489,9 +773,24 @@ class PythonToPythonJS(NodeVisitor):
             else:
                 decorators.append( decorator )
 
-
+        log('function: %s'%node.name)
         writer.write('def %s(args, kwargs):' % node.name)
         writer.push()
+
+        ## the user will almost always want to use Python-style variable scope,
+        ## this is kept here as an option to be sure we are compatible with the
+        ## old-style code in runtime/pythonpythonjs.py and runtime/builtins.py
+        if not GLOBAL_VARIABLE_SCOPE:
+            local_vars = set()
+            global_vars = set()
+            for n in node.body:
+                if isinstance(n, Assign) and isinstance(n.targets[0], Name):  ## assignment to local
+                    local_vars.add( n.targets[0].id )
+                elif isinstance(n, Global):
+                    global_vars.update( n.names )
+            if local_vars-global_vars:
+                a = ','.join( local_vars-global_vars )
+                writer.write('var(%s)' %a)
 
         if len(node.args.defaults) or len(node.args.args) or node.args.vararg or node.args.kwarg:
             # new pythonjs' python function arguments handling
@@ -523,8 +822,6 @@ class PythonToPythonJS(NodeVisitor):
             if node.args.kwarg:
                 keywords.append(keyword(Name('varkwarg', None), Str(node.args.kwarg)))
 
-            #prebody = list()  ## NOT USED?
-
             # create a JS Object to store the value of each parameter
             signature = ', '.join(map(lambda x: '%s=%s' % (self.visit(x.arg), self.visit(x.value)), keywords))
             writer.write('signature = JSObject(%s)' % signature)
@@ -543,21 +840,17 @@ class PythonToPythonJS(NodeVisitor):
                 expr = '%s = get_attribute(dict, "__call__")(create_array(%s), {});'
                 expr = expr % (node.args.kwarg, node.args.kwarg)
                 writer.write(expr)
+        else:
+            log('(function has no arguments)')
 
-        #map(self.visit, node.body)
-        for child in node.body:
-            # simple test to drop triple quote comments
-            if hasattr(child, 'value'):
-                if isinstance(child.value, Str):
-                    continue
-            if isinstance(child, GeneratorType):
-                for sub in child:
-                    self.visit(sub)
-            else:
-                self.visit(child)
+        self._return_type = None
+        map(self.visit, node.body)
+
+        if self._return_type:
+            self._function_return_types[ node.name ] = self._return_type
 
         writer.pull()
-
+        writer.write('%s.pythonscript_function=True'%node.name)
         # apply decorators
         for decorator in decorators:
             writer.write('%s = %s(create_array(%s))' % (node.name, self.visit(decorator), node.name))
@@ -586,6 +879,13 @@ class PythonToPythonJS(NodeVisitor):
         map(self.visit, node.body)
         writer.pull()
 
+    def visit_With(self, node):
+        if isinstance( node.context_expr, Name ) and node.context_expr.id == 'javascript':
+            self._with_js = True
+            writer.with_javascript = True
+            map(self.visit, node.body)
+            writer.with_javascript = False
+            self._with_js = False
 
 
 def main(script):
