@@ -313,7 +313,7 @@ class PythonToPythonJS(NodeVisitor):
         self._instance_attributes[ name ] = self._catch_attributes
 
 
-        writer.write('var(%s)' % (name, name, name))
+        writer.write('var(%s)' % name)
         writer.write('window["__%s_attrs"] = JSObject()' % name)
         writer.write('window["__%s_parents"] = JSArray()' % name)
         for base in node.bases:
