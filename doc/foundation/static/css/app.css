@@ -8,6 +8,8 @@
 body {
     background: url('../img/subtle_carbon.png');
     color: white;
+    font-size: 18px;
+    color: #DDD;
 }
 
 .top-bara .name h1 a {
@@ -20,14 +22,51 @@ body {
     margin-bottom: 10px;
 }
 
+/* admonition */
+
+div.admonition {
+    padding: 10px;
+}
+
+div.admonition p {
+    line-height: 1em;
+    margin: 0;    
+}
+
+div.admonition p:first-child {
+    line-height: 1em;
+    padding-bottom: 1em;
+}
+
+.note {
+    border: 1px solid rgba(46, 166, 203, 0.7);
+    border-left: 5px solid rgba(46, 166, 203, 0.7);
+    background-color: rgba(46, 166, 203, 0.3);
+}
+
+.warning {
+    border: 1px solid rgba(255, 127, 0, 0.7);
+    border-left: 5px solid rgba(255, 127, 0, 0.7);
+    background-color: rgba(255, 127, 0, 0.1);
+}
+
+.versionchanged {
+    border: 1px solid white;
+    border-left: 5px solid rgba(255, 255, 255, 0.7);
+    background-color: rgba(255, 255, 255, 0.3);
+    padding: 5px;
+}
+
+.versionmodified {
+    font-weight: bold;
+}
+
+/* other */
+
 .section ul {
     padding-left: 20px;
 }
 
-.warning {
-    border: 1px solid red;
-    background-color: rgba(255, 0, 0, 0.1);
-}
 
 h1, h2, h3, h4, h5, .top-bar .name h1 a {
     font-family: "League Gothic", Impact, sans;
@@ -43,23 +82,9 @@ h1, h2, h3, h4, h5, .top-bar .name h1 a {
     background-color: rgba(0, 0, 0, 0.3);
 }
 
-.note {
-    border: 1px solid #2BA6CB;
-    background-color: rgba(46, 166, 203, 0.3);
-}
 
 .hightlight {
     margin-bottom: 1em;
-}
-
-.versionchanged {
-    border: 1px solid white;
-    background-color: rgba(255, 255, 255, 0.3);
-    padding: 5px;
-}
-
-.versionmodified {
-    font-weight: bold;
 }
 
 .pre {
