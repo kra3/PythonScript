@@ -264,10 +264,7 @@ set_attribute.pythonscript_function = True
 
 def get_arguments(signature, args, kwargs):
     """Based on ``signature`` and ``args``, ``kwargs`` parameters retrieve
-    the actual parameters.
-
-    This will set default keyword arguments and retrieve positional arguments
-    in kwargs if their called as such"""
+    the actual parameters."""
     if args is None:
         args = []
     if kwargs is None:
@@ -278,15 +275,12 @@ def get_arguments(signature, args, kwargs):
     else:
         argslength = 0
 
-    if args.length > signature.args.length:
-        print 'ERROR args:', args, 'kwargs:', kwargs, 'sig:', signature
-        raise TypeError('function called with wrong number of arguments')
-
     j = 0
     while j < argslength:
         arg = JS('signature.args[j]')
         if kwargs:
             kwarg = kwargs[arg]
+            JS('delete kwargs[arg]')
             if kwarg:
                 out[arg] = kwarg
             elif j < args.length:
