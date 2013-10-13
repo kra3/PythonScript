@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 # Test Server for PythonScript
 # by Brett Hartshorn - copyright 2013
 # License: PSFLv2 - http://www.python.org/psf/license/
