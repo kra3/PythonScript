@@ -257,7 +257,7 @@ if __name__ == '__main__':
 		print(data)
 
 	else:
-		print('running server on localhost:8080')
+		print('running server on http://localhost:8080')
 		app = tornado.web.Application(
 			Handlers,
 			#cookie_secret = 'some random text',
